@@ -445,6 +445,8 @@ _GIT_PUSH_ARGS = (r'''(?:(?>'[^']*'|"(?:[^"\\]|\\[\s\S])*")|'(?![^']*')|"(?![^"]
                   r'''|\\[\s\S]|(?!''' + _GIT_PUSH + r''')[^;&|\n'"\\]|(?<=[<>])&|(?<![<>])&(?=>)|(?<=>)\|)*''')
 # An argument may open with a quote the shell strips (`"-f"`, `'+main'`, `"--force"`).
 _GIT_PUSH_ARG_START = r'''\s["']?'''
+# PowerShell verbs/aliases that write a registry key when given a provider path.
+_REG_WRITE_VERB = r'(?:sp|si|ni|set-item|new-item)'
 
 DANGEROUS_PATTERNS = [
     (r'\brm\s+(-[^\s]*\s+)*/', "delete in root path"),
@@ -524,8 +526,10 @@ DANGEROUS_PATTERNS = [
     # `\s+` after setx keeps a shell assignment (`setx=1`) out.
     (r'\breg(?:\.exe)?\s+(?:add|import|copy|restore|load|unload)\b', "registry write (reg add/import/copy/restore/load/unload)"),
     (r'\bregedit(?:\.exe)?\s+[/-]s\b', "registry write (regedit /s silent .reg import)"),
-    # The short aliases are common words, so they only count when aimed at a registry provider path.
-    (r'\b(?:sp|ni|set-item|new-item)\s+(?:-path\s+)?[\'"]?(?:hk(?:cu|lm|cr|u|cc):|registry::)', "registry write (sp/ni/Set-Item/New-Item on a registry path)"),
+    # The short aliases are common words, so they only count when aimed at a registry provider path,
+    # which may sit after any other parameter (`-Force`, `-Name`, `-LiteralPath`, `-Path:`) within the
+    # same segment. The scan stops at the next verb token so a run of `si si si ...` stays linear.
+    (r'\b' + _REG_WRITE_VERB + r'\s(?:(?!\b' + _REG_WRITE_VERB + r'\s)[^\n;|&])*?(?:hk(?:cu|lm|cr|u|cc):|registry::)', "registry write (sp/ni/Set-Item/New-Item on a registry path)"),
     (r'\bsetx(?:\.exe)?\s+[^\s;&|]', "registry write (setx persistent environment variable)"),
     (r'\b(?:set|new)-itemproperty\b', "registry value write (Set-ItemProperty / New-ItemProperty)"),
     # Windows service/system stop — analogue of systemctl stop.

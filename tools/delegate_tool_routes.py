@@ -305,7 +305,19 @@ def _route_one(provider: DelegationProvider, declared: dict[str, dict[str, Any]]
         error = _param_error(index, name, value, declared[name])
         if error:
             raise DelegationRouteError(error)
-    payload = {"goal": task.get("goal"), "context": task.get("context"), "index": index, **params}
+    # A router needs to know the child's required capabilities before choosing a model. Keep
+    # image bytes and the output schema out of the provider payload; only their presence matters.
+    toolsets = task.get("toolsets")
+    payload = {
+        "goal": task.get("goal"), "context": task.get("context"), "index": index,
+        "requirements": {
+            "toolsets": list(toolsets) if isinstance(toolsets, list) else [],
+            "has_images": bool(task.get("images")),
+            "structured_output": task.get("output_schema") is not None,
+            "role": task.get("role") if isinstance(task.get("role"), str) else None,
+        },
+        **params,
+    }
     try:
         return _clean_route(provider.name, provider.route_task(payload, config))
     except DelegationRouteError as exc:
@@ -313,6 +325,20 @@ def _route_one(provider: DelegationProvider, declared: dict[str, dict[str, Any]]
     except Exception as exc:
         logger.warning("delegation provider %s.route_task() raised", provider.name, exc_info=True)
         raise DelegationRouteError(f"Task {index}: delegation backend '{provider.name}' failed: {exc}") from exc
+
+
+def _routing_tasks(task_list: list[dict[str, Any]], task_schemas: list[Any], task_images: list[Any],
+                   parent_agent: Any, role: str) -> list[dict[str, Any]]:
+    """Give providers the capabilities child construction will actually use, without changing the spawn inputs."""
+    from tools.delegate_tool_toolsets import _resolve_child_toolsets
+
+    enabled, disabled = _resolve_child_toolsets(parent_agent, None, role)
+    toolsets = [name for name in enabled if name not in disabled]
+    return [
+        {**task, "images": task_images[i], "output_schema": task_schemas[i],
+         "toolsets": toolsets, "role": role}
+        for i, task in enumerate(task_list)
+    ]
 
 
 def resolve_task_routes(task_list: list[dict[str, Any]], config: Mapping[str, Any], parent_agent: Any,

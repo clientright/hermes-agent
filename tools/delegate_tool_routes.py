@@ -327,6 +327,20 @@ def _route_one(provider: DelegationProvider, declared: dict[str, dict[str, Any]]
         raise DelegationRouteError(f"Task {index}: delegation backend '{provider.name}' failed: {exc}") from exc
 
 
+def _routing_tasks(task_list: list[dict[str, Any]], task_schemas: list[Any], task_images: list[Any],
+                   parent_agent: Any, role: str) -> list[dict[str, Any]]:
+    """Give providers the capabilities child construction will actually use, without changing the spawn inputs."""
+    from tools.delegate_tool_toolsets import _resolve_child_toolsets
+
+    enabled, disabled = _resolve_child_toolsets(parent_agent, None, role)
+    toolsets = [name for name in enabled if name not in disabled]
+    return [
+        {**task, "images": task_images[i], "output_schema": task_schemas[i],
+         "toolsets": toolsets, "role": role}
+        for i, task in enumerate(task_list)
+    ]
+
+
 def resolve_task_routes(task_list: list[dict[str, Any]], config: Mapping[str, Any], parent_agent: Any,
                         ) -> tuple[list[TaskRoute], Optional[str]]:
     """One :class:`TaskRoute` per task from the backend the session's ``delegate_task`` was built from (else

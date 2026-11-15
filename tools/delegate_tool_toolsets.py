@@ -22,6 +22,12 @@ DELEGATE_BLOCKED_TOOLS = frozenset(
 )
 DEFAULT_TOOLSETS = ["terminal", "file", "web"]
 
+
+def _effective_child_role(parent_agent, *, max_spawn: int, orchestrator_enabled: bool) -> str:
+    """The role used for both route requirements and child construction."""
+    child_depth = getattr(parent_agent, "_delegate_depth", 0) + 1
+    return "orchestrator" if orchestrator_enabled and child_depth < max_spawn else "leaf"
+
 def _is_mcp_toolset_name(name: str) -> bool:
     """Return True for canonical MCP toolsets and their registered aliases."""
     if not name:

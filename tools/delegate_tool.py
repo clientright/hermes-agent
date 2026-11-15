@@ -52,7 +52,7 @@ from tools.delegate_tool_tasks import (
 )
 from tools.delegate_tool_tuning import pin_child_service_tier
 from tools.delegate_tool_toolsets import (
-    DELEGATE_BLOCKED_TOOLS, _expand_parent_toolsets, _resolve_child_toolsets, _strip_blocked_tools,
+    DELEGATE_BLOCKED_TOOLS, _effective_child_role, _expand_parent_toolsets, _resolve_child_toolsets, _strip_blocked_tools,
 )
 from tools.delegate_tool_results import (
     _apply_summary_budget, _build_child_preserving_parent_tools, _run_child_lifecycle, _summarize_tool_arguments,
@@ -248,7 +248,8 @@ def _build_child_agent(
     # depth budget remains below max_spawn_depth. The `role` arg is ignored.
     child_depth = getattr(parent_agent, "_delegate_depth", 0) + 1
     max_spawn = _get_max_spawn_depth()
-    effective_role = "orchestrator" if _get_orchestrator_enabled() and child_depth < max_spawn else "leaf"
+    effective_role = _effective_child_role(
+        parent_agent, max_spawn=max_spawn, orchestrator_enabled=_get_orchestrator_enabled())
 
     # One subagent_id shared by the progress callback, spawn_requested event and
     # the live registry; parent_id is set when THIS parent is itself a subagent.
@@ -664,11 +665,17 @@ def delegate_task(
     if not err:
         task_images, err = _coerce_task_images(task_list, images)
     if not err:
+        routing_tasks = task_list
+        if credentials_cfg is None:
+            from tools.delegate_tool_routes import _routing_tasks
+            effective_role = _effective_child_role(
+                parent_agent, max_spawn=max_spawn, orchestrator_enabled=_get_orchestrator_enabled())
+            routing_tasks = _routing_tasks(task_list, task_schemas, task_images, parent_agent, effective_role)
         # One route per task from the active delegation provider (delegation.backend), or from credentials_cfg
         # (internal callers only, e.g. /review → auxiliary.review: a per-call routing owner shaped like the
         # delegation section, kept together with its fallback policy through child construction). Explicit-pin
         # preflight failures (e.g. pinned delegation.command missing from PATH) refuse the spawn loudly (#80450).
-        routes, err = _routes_for(task_list, cfg, credentials_cfg, parent_agent)
+        routes, err = _routes_for(routing_tasks, cfg, credentials_cfg, parent_agent)
     if err:
         return tool_error(err)
     from tools.delegate_tool_auto_resume import refuse_waiting_duplicates

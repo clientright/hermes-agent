@@ -305,7 +305,19 @@ def _route_one(provider: DelegationProvider, declared: dict[str, dict[str, Any]]
         error = _param_error(index, name, value, declared[name])
         if error:
             raise DelegationRouteError(error)
-    payload = {"goal": task.get("goal"), "context": task.get("context"), "index": index, **params}
+    # A router needs to know the child's required capabilities before choosing a model. Keep
+    # image bytes and the output schema out of the provider payload; only their presence matters.
+    toolsets = task.get("toolsets")
+    payload = {
+        "goal": task.get("goal"), "context": task.get("context"), "index": index,
+        "requirements": {
+            "toolsets": list(toolsets) if isinstance(toolsets, list) else [],
+            "has_images": bool(task.get("images")),
+            "structured_output": task.get("output_schema") is not None,
+            "role": task.get("role") if isinstance(task.get("role"), str) else None,
+        },
+        **params,
+    }
     try:
         return _clean_route(provider.name, provider.route_task(payload, config))
     except DelegationRouteError as exc:
